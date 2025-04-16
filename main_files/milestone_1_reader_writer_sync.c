@@ -33,12 +33,21 @@
 #define BG_CYAN     "\033[46m"
 #define BG_WHITE    "\033[47m"
 
+//Switch values
+#define PRIORITY_WRITER 0
+#define PRIORITY_READER 1
+
+//actual switch
+const unsigned int priority = PRIORITY_WRITER;
+
 //Global Variable
 char data[1024]; 
 unsigned int reader_count =0;
+unsigned int waiting_writers = 0;
 //Define Semaphores
 sem_t reader_count_sem;
 sem_t writer_sem;
+sem_t service_queue; // ensure fairness (avoid race)
 
 //Writer job
 void* writer(void* args)
@@ -47,14 +56,30 @@ void* writer(void* args)
 	//While true
 	while(1)
 	{
-		sem_wait(&writer_sem);
+		if(priority == PRIORITY_READER)
+		{
+			sem_wait(&writer_sem);
 
-		//The Writing Process
-		printf(BOLD GREEN "[INFO::<%d>] WRITING MESSAGE\n", id);
-		sprintf(data, "Message from writer: (%s: %d)", "I am writer", rand() );
-		sleep(1);
-		sem_post(&writer_sem);
-		sleep(1);
+			//The Writing Process
+			printf(BOLD GREEN "[INFO::<%d>] WRITING MESSAGE\n", id);
+			sprintf(data, "Message from writer: (%s: %d)", "I am writer", rand() );
+			sleep(1);
+			sem_post(&writer_sem);
+			sleep(1);
+
+		}else{
+			sem_wait(&service_queue);     // Queue up fairly
+            waiting_writers++;
+            sem_wait(&writer_sem);        // Wait for exclusive access
+            sem_post(&service_queue);     // Let others line up
+
+            printf(GREEN "[WRITER %d] Writing with priority...\n" RESET, id);
+            sprintf(data, "Writer %d says hi (priority)!", id);
+            sleep(1);
+
+            waiting_writers--;
+            sem_post(&writer_sem);
+		}
 	}
 }
 
@@ -65,30 +90,65 @@ void* reader(void* args)
 	//While true
 	while(1)
 	{
-		sem_wait(&reader_count_sem);
-		reader_count++;
-
-		if(reader_count == 1)
+		if(priority == PRIORITY_READER)
 		{
-			//This is first reader so block writer (READER_PRIORITY SCENARIO)
-			sem_wait(&writer_sem);
+			//Incase of reader priority
+			sem_wait(&reader_count_sem);
+			reader_count++;
+
+				if(reader_count == 1)
+				{
+					//This is first reader so block writer (READER_PRIORITY SCENARIO)
+					sem_wait(&writer_sem);
+				}
+
+
+
+			sem_post(&reader_count_sem);
+
+			//Start reading
+			printf(RED"[INFO::<%d>] Read Message -> [%s] \n", id,data);
+			sleep(1);
+			sem_wait(&reader_count_sem);
+
+			reader_count--;
+
+			if(reader_count == 0){
+				//After the last reader gets out, the writer is able to write again (READER_PRIORITY SCENARIO)
+				sem_post(&writer_sem);
+			}
+			sem_post(&reader_count_sem);
+			sleep(1);
+		
+		}else{
+			sem_wait(&service_queue);
+            sem_wait(&reader_count_sem);
+
+            // If this is the first reader and no writer waiting, proceed
+            if (reader_count == 0 && waiting_writers > 0) {
+                // Give priority to writer — back off
+                sem_post(&reader_count_sem);
+                sem_post(&service_queue);
+                usleep(100000); // short wait, retry
+                continue;
+            }
+
+            reader_count++;
+            if (reader_count == 1)
+                sem_wait(&writer_sem); // First reader blocks writer
+
+            sem_post(&reader_count_sem);
+            sem_post(&service_queue);
+
+            printf(RED "[READER %d] Read with priority: %s\n" RESET, id, data);
+            sleep(1);
+
+            sem_wait(&reader_count_sem);
+            reader_count--;
+            if (reader_count == 0)
+                sem_post(&writer_sem); // Last reader allows writer
+            sem_post(&reader_count_sem);
 		}
-
-		sem_post(&reader_count_sem);
-
-		//Start reading
-		printf(RED"[INFO::<%d>] Read Message -> [%s] \n", id,data);
-		sleep(1);
-		sem_wait(&reader_count_sem);
-
-		reader_count--;
-
-		if(reader_count == 0){
-			//After the last reader gets out, the writer is able to write again (READER_PRIORITY SCENARIO)
-			sem_post(&writer_sem);
-		}
-		sem_post(&reader_count_sem);
-		sleep(1);
 	}
 }
 int main()
@@ -100,7 +160,7 @@ int main()
 	//Initialize the semaphores
 	sem_init(&reader_count_sem, 0, 1);
 	sem_init(&writer_sem, 0, 1);
-	
+	sem_init(&service_queue, 0, 1);
 	//IDS
 	unsigned int rids[READER_COUNT];
 	unsigned int wids[WRITER_COUNT];
@@ -114,7 +174,7 @@ int main()
 	for(unsigned int i =0; i < WRITER_COUNT; i++)
 	{
 		wids[i] =i;
-		pthread_create(&writer_threads[i], NULL, writer, &rids[i]);
+		pthread_create(&writer_threads[i], NULL, writer, &wids[i]);
 	}
 
 	//join threads
