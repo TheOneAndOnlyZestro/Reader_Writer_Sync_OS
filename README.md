@@ -24,6 +24,7 @@ This project implements a **multi-level reader-writer synchronization system** a
 - POSIX semaphores (`sem_init`, `sem_wait`, `sem_post`).  
 - Mutex locks (`pthread_mutex_t`).  
 - Shared memory (`shmget`, `shmat`).  
+
 ---
 
 ### **Milestone 2: Memory Management Simulator**  
@@ -40,6 +41,7 @@ This project implements a **multi-level reader-writer synchronization system** a
 **Algorithms:**  
 - First-Fit/Best-Fit for segmentation.  
 - Page replacement (optional: FIFO/LRU).  
+
 ---
 
 ### **Milestone 3: Multi-Level Reader-Writer System**  
@@ -51,4 +53,16 @@ This project implements a **multi-level reader-writer synchronization system** a
 **Synchronization Challenges:**  
 - Thread-safe shared memory access (`pthreads`).  
 - Deadlock prevention (e.g., lock ordering).  
+
 ---
+
+## 🔧 Compilation & Execution
+
+To compile and run the **Milestone 1** reader-writer synchronization program, follow these steps:
+
+### 🔨 Compilation
+
+From inside the `main_files` directory, run:
+
+```bash
+gcc -pthread milestone_1_reader_writer_sync.c -o program.exe
